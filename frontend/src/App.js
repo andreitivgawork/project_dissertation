@@ -1,74 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useHistory } from 'react-router-dom';
 
 const App = () => {
-  const [info, setInfo] = useState('');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
   const [users, setUsers] = useState([]);
+  const [message, setMessage] = useState('');
+  const history = useHistory();
 
   useEffect(() => {
-    axios.get('http://localhost:5000/api/info')
-      .then(response => {
-        setInfo(response.data.message);
-      })
-      .catch(error => {
-        console.error("There was an error fetching the data!", error);
-      });
+    const fetchUsers = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get('http://localhost:5000/api/users', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        setUsers(response.data);
+      } catch (error) {
+        console.error("There was an error fetching the users!", error);
+        setMessage('Failed to fetch users.');
+      }
+    };
 
-      fetchUsers();
-
+    fetchUsers();
   }, []);
 
-  const fetchUsers = () => {
-    axios.get('http://localhost:5000/api/users')
-      .then(response => {
-        setUsers(response.data);
-      })
-      .catch(error => {
-        console.error("There was an error fetching the users!", error);
-      });
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    axios.post('http://localhost:5000/api/add_user', { name, email })
-      .then(response => {
-        setMessage(response.data.message);
-        setName('');
-        setEmail('');
-      })
-      .catch(error => {
-        console.error("There was an error adding the user!", error);
-      });
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    history.push('/login');
   };
 
   return (
-<div>
-      <h1>{info}</h1>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Name:</label>
-          <input 
-            type="text" 
-            value={name} 
-            onChange={(e) => setName(e.target.value)} 
-            required 
-          />
-        </div>
-        <div>
-          <label>Email:</label>
-          <input 
-            type="email" 
-            value={email} 
-            onChange={(e) => setEmail(e.target.value)} 
-            required 
-          />
-        </div>
-        <button type="submit">Add User</button>
-      </form>
+    <div>
       {message && <p>{message}</p>}
+      <button onClick={handleLogout}>Logout</button>
       <h2>User List</h2>
       <ul>
         {users.map(user => (
