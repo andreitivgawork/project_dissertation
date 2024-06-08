@@ -100,6 +100,23 @@ def chat():
 
     history, beliefs, actions, system_response = generate_chat_response(user_input, history)
 
+    # for replacing delexicalized values in system response
+    if 'confirm' or 'request' in actions:
+        slot_value = {}
+        if ',' in beliefs:
+            bel = [s.strip() for s in beliefs.split(',')]
+        else:
+            bel = [beliefs.strip()]
+
+        if bel[0] != '':
+            for b in bel:
+                slot = b.split()[1]
+                value = b.split()[2]
+                slot_value[slot] = value
+
+            system_response = replace_placeholders(system_response, slot_value)
+        
+
     # check account balance
     if 'offer' in actions:
         # extract the beliefs - will have a list of the beliefs
@@ -112,9 +129,6 @@ def chat():
             value = b.split()[2] #checking or savings
 
         get_balance_response = get_account_balance(user_id, value)
-        print(get_balance_response)
-
-
         balance = get_balance_response[0][value]
 
         if get_balance_response[1] == 200:
@@ -165,8 +179,6 @@ def chat():
                          transfer_slot_values_map['amount'],
                          transfer_slot_values_map['account_type'],
                          transfer_slot_values_map['recipient_account_type'])
-        
-        print(transfer_response)
 
         if transfer_response[1] == 200:
             history = []
@@ -181,6 +193,15 @@ def chat():
             "system_response": system_response
         }
     )
+
+def replace_placeholders(text, replacement_dict):
+    pattern = r'\[banks_(.*?)\]'
+
+    def replace_match(match):
+        key = match.group(1)
+        return replacement_dict.get(key, match.group(0))
+
+    return re.sub(pattern, replace_match, text)
         
 def get_account_balance(user_id, account_type=None):
     if account_type:
@@ -198,12 +219,6 @@ def get_account_balance(user_id, account_type=None):
     
 def perform_transfer(sender_id, recipient_email, amount, source_account_type, destination_account_type):
     amount = float(str(amount).lstrip("$"))
-
-    print(sender_id)
-    print(recipient_email)
-    print(amount)
-    print(source_account_type)
-    print(destination_account_type)
 
     if not amount or amount <= 0:
         return {"message": "Invalid amount"}, 400
