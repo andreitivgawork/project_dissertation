@@ -139,9 +139,19 @@ def chat():
             if '[banks_balance]' in system_response:
                 system_response = system_response.replace('[banks_balance]', str(balance))
 
+        elif get_balance_response[1] == 400 or get_balance_response[1] == 404:
+            return jsonify(
+                {
+                    "history": [],
+                    "beliefs": '',
+                    "actions": '',
+                    "system_response": 'The transfer could not be done. Please try again. Reason: ' + transfer_response[0]['message']
+                }
+            )
+
+
     # transfer
     if 'notify_success' in actions:
-
         transfer_slot_values_map = {
             'recipient_account_name': '',
             'account_type': '',
@@ -158,22 +168,35 @@ def chat():
         for b in bel:
             slot = b.split()[1]
             value = b.split()[2]
+
+            # edge case clean the slot of special characters account_type[
+            pattern = r'^[^\w]+|[^\w]+$'
+            slot = re.sub(pattern, '', slot)
+
+            if (value == '$'): # edge case banks amount $ 200
+                value = b.split()[3]
+
             transfer_slot_values_map[slot] = value
+
+        print(beliefs)
+        print(actions)
+        print(system_response)
+        print(transfer_slot_values_map)
+
 
         if transfer_slot_values_map['recipient_account_name'] == '' or transfer_slot_values_map['account_type'] == '' or transfer_slot_values_map['amount'] == '':
             return jsonify(
                 {
                     "history": [],
-                    "beliefs": beliefs,
-                    "actions": actions,
-                    "system_response": 'The transfer could not be done. Please try again'
+                    "beliefs": '',
+                    "actions": '',
+                    "system_response": 'The transfer could not be done. Please try again. Reason: We are missing some information.'
                 }
             )
         
         if transfer_slot_values_map['recipient_account_type'] == '':
             transfer_slot_values_map['recipient_account_type'] = transfer_slot_values_map['account_type']
 
-        print(transfer_slot_values_map)
         transfer_response = perform_transfer(user_id, 
                          transfer_slot_values_map['recipient_account_name'],
                          transfer_slot_values_map['amount'],
@@ -184,6 +207,16 @@ def chat():
             history = []
             beliefs = ''
             actions = ''
+
+        elif transfer_response[1] == 400 or transfer_response[1] == 404:
+            return jsonify(
+                {
+                    "history": [],
+                    "beliefs": '',
+                    "actions": '',
+                    "system_response": 'The transfer could not be done. Please try again. Reason: ' + transfer_response[0]['message']
+                }
+            )
 
     return jsonify(
         {

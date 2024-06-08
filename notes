@@ -4,4 +4,10 @@ i want to send money
 To Tom. From my checking account to his checking. Amount 200
 
 
-unhappy flows - check how much money another person has - seems like model is not smart
+unhappy flows 
+
+check_balance:
+- check how much money another person has - done, seems like model is not smart
+
+transfer:
+- try to transfter more than you have - done
