@@ -6,6 +6,8 @@ services:
     environment:
       FLASK_APP: app
       FLASK_ENV: development
+      HUGGINGFACE_TOKEN: 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  # Add this line
+
     volumes:
       - ./backend:/app
 

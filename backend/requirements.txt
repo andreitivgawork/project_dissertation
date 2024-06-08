@@ -3,7 +3,8 @@ flask-cors
 flask-sqlalchemy
 flask-migrate
 psycopg2
-flask-login
-flask-session
 werkzeug
 flask-jwt-extended
+requests
+torch
+transformers

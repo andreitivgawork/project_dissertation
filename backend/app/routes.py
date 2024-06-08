@@ -1,16 +1,19 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+import requests
+import os
 from .models import User, Account, db
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+import re
+
+ckpt = 'meyandrei/bankchat'
+tokenizer = AutoTokenizer.from_pretrained(ckpt, padding_side='left', use_safetensors=True)
+model = AutoModelForCausalLM.from_pretrained(ckpt, use_safetensors=True)
+context_token = tokenizer.encode('<|context|>', return_tensors='pt')
+endofcontext_token = tokenizer.encode(' <|endofcontext|>', return_tensors='pt')
 
 main = Blueprint('main', __name__)
-
-@main.route('/api/users', methods=['GET'])
-@jwt_required()
-def get_users():
-    print("Fetching users")
-    users = User.query.all()
-    users_list = [{"id": user.id, "name": user.name, "email": user.email} for user in users]
-    return jsonify(users_list)
 
 @main.route('/api/register', methods=['POST'])
 def register():
@@ -61,40 +64,7 @@ def account_balance():
         accounts = Account.query.filter_by(user_id=user_id).all()
         account_balances = {account.type: account.balance for account in accounts}
         return jsonify(account_balances)
-
-@main.route('/api/transfer_money', methods=['POST'])
-@jwt_required()
-def transfer_money():
-    data = request.get_json()
-    sender_id = get_jwt_identity()
-    recipient_email = data.get('recipient_email')
-    amount = data.get('amount')
-    source_account_type = data.get('source_account_type')
-    destination_account_type = data.get('destination_account_type')
-
-    if not amount or amount <= 0:
-        return jsonify({"message": "Invalid amount"}), 400
-
-    recipient = User.query.filter_by(email=recipient_email).first()
-    if not recipient:
-        return jsonify({"message": "Recipient not found"}), 404
-
-    source_account = Account.query.filter_by(user_id=sender_id, type=source_account_type).first()
-    destination_account = Account.query.filter_by(user_id=recipient.id, type=destination_account_type).first()
-
-    if not source_account or source_account.balance < amount:
-        return jsonify({"message": "Insufficient funds"}), 400
-
-    if not destination_account:
-        return jsonify({"message": "Destination account not found"}), 404
-
-    # Perform the transfer
-    source_account.balance -= amount
-    destination_account.balance += amount
-    db.session.commit()
-
-    return jsonify({"message": "Transfer successful"})
-
+    
 @main.route('/api/add_money', methods=['POST'])
 @jwt_required()
 def add_money():
@@ -115,9 +85,162 @@ def add_money():
     account.balance += amount
     db.session.commit()
 
-    return jsonify({"message": "Money added successfully"})
+    return jsonify({"message": "Money added successfully"})       
 
-@main.route('/api/logout', methods=['POST'])
-def logout():
-    response = jsonify({"message": "Logged out successfully"})
-    return response
+@main.route('/api/transfer_money', methods=['POST'])
+@jwt_required()
+def transfer_money():
+    data = request.get_json()
+    sender_id = get_jwt_identity()
+    recipient_email = data.get('recipient_email')
+    amount = data.get('amount')
+    source_account_type = data.get('source_account_type')
+    destination_account_type = data.get('destination_account_type')
+
+    response, status = perform_transfer(sender_id, recipient_email, amount, source_account_type, destination_account_type)
+    return jsonify(response), status
+
+@main.route('/api/chat', methods=['POST'])
+@jwt_required()
+def chat():
+    data = request.get_json()
+    user_id = get_jwt_identity()
+
+    user_input = data.get('user_input')
+    history = data.get('history')
+
+    history, beliefs, actions, system_response = generate_chat_response(user_input, history)
+
+    # transfer
+    if 'notify_success' in actions:
+
+        transfer_slot_values_map = {
+            'recipient_account_name': '',
+            'account_type': '',
+            'recipient_account_type': '',
+            'amount': '',
+        }
+
+        # extract the beliefs - will have a list of the beliefs
+        if ',' in beliefs:
+            bel = [s.strip() for s in beliefs.split(',')]
+        else:
+            bel = [beliefs.strip()]
+
+        print(bel)
+        
+        for b in bel:
+            slot = b.split()[1]
+            value = b.split()[2]
+            transfer_slot_values_map[slot] = value
+
+        if transfer_slot_values_map['recipient_account_name'] == '' or transfer_slot_values_map['account_type'] == '' or transfer_slot_values_map['amount'] == '':
+            return jsonify(
+                {
+                    "history": [],
+                    "beliefs": beliefs,
+                    "actions": actions,
+                    "system_response": 'The transfer could not be done. Please try again'
+                }
+            )
+        
+        if transfer_slot_values_map['recipient_account_type'] == '':
+            transfer_slot_values_map['recipient_account_type'] = transfer_slot_values_map['account_type']
+
+        print(transfer_slot_values_map)
+        transfer_response = perform_transfer(user_id, 
+                         transfer_slot_values_map['recipient_account_name'],
+                         transfer_slot_values_map['amount'],
+                         transfer_slot_values_map['account_type'],
+                         transfer_slot_values_map['recipient_account_type'])
+        
+        print(transfer_response)
+
+        if transfer_response[1] == '200':
+            history = []
+            beliefs = ''
+            actions = ''
+
+            return jsonify(
+                {
+                    "history": history,
+                    "beliefs": beliefs,
+                    "actions": actions,
+                    "system_response": system_response
+                }
+            )
+        
+
+def perform_transfer(sender_id, recipient_email, amount, source_account_type, destination_account_type):
+    amount = float(amount.lstrip("$"))
+
+    print(sender_id)
+    print(recipient_email)
+    print(amount)
+    print(source_account_type)
+    print(destination_account_type)
+
+    if not amount or amount <= 0:
+        return {"message": "Invalid amount"}, 400
+
+    recipient = User.query.filter_by(name=recipient_email).first()
+    if not recipient:
+        return {"message": "Recipient not found"}, 404
+
+    source_account = Account.query.filter_by(user_id=sender_id, type=source_account_type).first()
+    destination_account = Account.query.filter_by(user_id=recipient.id, type=destination_account_type).first()
+
+    if not source_account or source_account.balance < amount:
+        return {"message": "Insufficient funds"}, 400
+
+    if not destination_account:
+        return {"message": "Destination account not found"}, 404
+
+    # Perform the transfer
+    source_account.balance -= amount
+    destination_account.balance += amount
+    db.session.commit()
+
+    return {"message": "Transfer successful"}, 200
+
+def generate_chat_response(input, history):
+    if history == []:
+        context_tokenized = torch.LongTensor(history)
+    else:
+        history_str = tokenizer.decode(history[0])
+        turns = re.split('<\|system\|>|<\|user\|>', history_str)[1:]
+
+        for i in range(0, len(turns)-1, 2):
+            turns[i] = '<|user|>' + turns[i]
+            turns[i+1] = '<|system|>' + turns[i+1]
+
+        context_tokenized = tokenizer.encode(''.join(turns), return_tensors='pt') 
+
+    user_input_tokenized = tokenizer.encode(' <|user|> '+ input, return_tensors='pt')
+
+    model_input = torch.cat([context_token, context_tokenized, user_input_tokenized, endofcontext_token], dim=-1)
+    attention_mask = torch.ones_like(model_input)
+
+    out_tokenized = model.generate(model_input, max_length=1024, eos_token_id=50258, pad_token_id=50260, attention_mask=attention_mask).tolist()[0]
+    out_str = tokenizer.decode(out_tokenized)
+    out_str = out_str.split('\n')[0]
+
+    generated_substring = out_str.split('<|endofcontext|>')[1] #belief, actions, system_response
+
+    beliefs_start_index = generated_substring.find('<|belief|>') + len('<|belief|>')
+    beliefs_end_index = generated_substring.find('<|endofbelief|>', beliefs_start_index)
+
+    actions_start_index = generated_substring.find('<|action|>') + len('<|action|>')
+    actions_end_index = generated_substring.find('<|endofaction|>', actions_start_index)
+
+    response_start_index = generated_substring.find('<|response|>') + len('<|response|>')
+    response_end_index = generated_substring.find('<|endofresponse|>', response_start_index)
+
+    beliefs_str = generated_substring[beliefs_start_index:beliefs_end_index]
+    actions_str = generated_substring[actions_start_index:actions_end_index]
+    system_response_str = generated_substring[response_start_index:response_end_index]
+
+    system_resp_tokenized = tokenizer.encode(' <|system|> '+ system_response_str, return_tensors='pt')
+    history = torch.cat([torch.LongTensor(history), user_input_tokenized, system_resp_tokenized], dim=-1).tolist()
+
+    return history, beliefs_str, actions_str, system_response_str    

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useHistory } from 'react-router-dom';
+import Chat from './Chat';
+import './App.css';
 
 const App = () => {
   const [balances, setBalances] = useState({ checking: 0.0, savings: 0.0 });
@@ -10,6 +12,9 @@ const App = () => {
   const [recipientEmail, setRecipientEmail] = useState('');
   const [sourceAccountType, setSourceAccountType] = useState('');
   const [destinationAccountType, setDestinationAccountType] = useState('');
+
+  const [chatHistory, setChatHistory] = useState([]);
+
   const history = useHistory();
 
   useEffect(() => {
@@ -81,6 +86,10 @@ const App = () => {
     history.push('/login');
   };
 
+  const updateChatHistory = (newHistory) => {
+    setChatHistory(newHistory);
+  };
+
   return (
     <div>
       {message && <p>{message}</p>}
@@ -127,6 +136,7 @@ const App = () => {
         </select>
         <button onClick={handleTransferMoney}>Transfer Money</button>
       </div>
+      <Chat chatHistory={chatHistory} updateChatHistory={updateChatHistory} />
     </div>
   );
 };

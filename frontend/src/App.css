@@ -1,0 +1,18 @@
+.chat-window {
+    border: 1px solid #ccc;
+    padding: 10px;
+    width: 300px;
+    height: 400px;
+    overflow-y: scroll;
+  }
+  
+  .user-message {
+    text-align: right;
+    color: blue;
+  }
+  
+  .bot-message {
+    text-align: left;
+    color: green;
+  }
+  
