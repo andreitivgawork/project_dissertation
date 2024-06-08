@@ -12,7 +12,6 @@ const Chat = ({ chatHistory, updateChatHistory }) => {
     try {
       const token = localStorage.getItem('token');
       console.log(input)
-      console.log(chatHistory)
       const response = await axios.post('http://localhost:5000/api/chat', 
         { 
           user_input: input, 

@@ -51,19 +51,8 @@ def login():
 def account_balance():
     user_id = get_jwt_identity()
     account_type = request.args.get('type')
-
-    if account_type:
-        if account_type not in ['checking', 'savings']:
-            return jsonify({"message": "Invalid account type"}), 400
-        account = Account.query.filter_by(user_id=user_id, type=account_type).first()
-        if account:
-            return jsonify({account.type: account.balance})
-        else:
-            return jsonify({"message": "Account not found"}), 404
-    else:
-        accounts = Account.query.filter_by(user_id=user_id).all()
-        account_balances = {account.type: account.balance for account in accounts}
-        return jsonify(account_balances)
+    response, status = get_account_balance(user_id, account_type)
+    return jsonify(response), status
     
 @main.route('/api/add_money', methods=['POST'])
 @jwt_required()
@@ -111,6 +100,31 @@ def chat():
 
     history, beliefs, actions, system_response = generate_chat_response(user_input, history)
 
+    # check account balance
+    if 'offer' in actions:
+        # extract the beliefs - will have a list of the beliefs
+        if ',' in beliefs:
+            bel = [s.strip() for s in beliefs.split(',')]
+        else:
+            bel = [beliefs.strip()]
+
+        for b in bel:
+            value = b.split()[2] #checking or savings
+
+        get_balance_response = get_account_balance(user_id, value)
+        print(get_balance_response)
+
+
+        balance = get_balance_response[0][value]
+
+        if get_balance_response[1] == 200:
+            history = []
+            beliefs = ''
+            actions = ''
+
+            if '[banks_balance]' in system_response:
+                system_response = system_response.replace('[banks_balance]', str(balance))
+
     # transfer
     if 'notify_success' in actions:
 
@@ -126,8 +140,6 @@ def chat():
             bel = [s.strip() for s in beliefs.split(',')]
         else:
             bel = [beliefs.strip()]
-
-        print(bel)
         
         for b in bel:
             slot = b.split()[1]
@@ -156,23 +168,36 @@ def chat():
         
         print(transfer_response)
 
-        if transfer_response[1] == '200':
+        if transfer_response[1] == 200:
             history = []
             beliefs = ''
             actions = ''
 
-            return jsonify(
-                {
-                    "history": history,
-                    "beliefs": beliefs,
-                    "actions": actions,
-                    "system_response": system_response
-                }
-            )
+    return jsonify(
+        {
+            "history": history,
+            "beliefs": beliefs,
+            "actions": actions,
+            "system_response": system_response
+        }
+    )
         
-
+def get_account_balance(user_id, account_type=None):
+    if account_type:
+        if account_type not in ['checking', 'savings']:
+            return {"message": "Invalid account type"}, 400
+        account = Account.query.filter_by(user_id=user_id, type=account_type).first()
+        if account:
+            return {account.type: account.balance}, 200
+        else:
+            return {"message": "Account not found"}, 404
+    else:
+        accounts = Account.query.filter_by(user_id=user_id).all()
+        account_balances = {account.type: account.balance for account in accounts}
+        return account_balances, 200
+    
 def perform_transfer(sender_id, recipient_email, amount, source_account_type, destination_account_type):
-    amount = float(amount.lstrip("$"))
+    amount = float(str(amount).lstrip("$"))
 
     print(sender_id)
     print(recipient_email)
