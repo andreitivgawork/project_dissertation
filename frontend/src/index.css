@@ -1,0 +1,29 @@
+.dots {
+    display: inline-flex;
+    margin-left: 5px;
+    font-size: 24px; /* Increase this value to make the dots bigger */
+  }
+  
+  .dots span {
+    animation: blink 1s infinite;
+    opacity: 0;
+  }
+  
+  .dots span:nth-of-type(1) {
+    animation-delay: 0s;
+  }
+  
+  .dots span:nth-of-type(2) {
+    animation-delay: 0.2s;
+  }
+  
+  .dots span:nth-of-type(3) {
+    animation-delay: 0.4s;
+  }
+  
+  @keyframes blink {
+    50% {
+      opacity: 1;
+    }
+  }
+  

@@ -15,6 +15,21 @@ endofcontext_token = tokenizer.encode(' <|endofcontext|>', return_tensors='pt')
 
 main = Blueprint('main', __name__)
 
+@main.route('/api/users', methods=['GET'])
+@jwt_required()
+def get_users():
+    user_id = get_jwt_identity()
+    users = User.query.filter(User.id != user_id).all()  # Exclude the current user
+    users_list = [{"id": user.id, "name": user.name, "email": user.email} for user in users]
+    return jsonify(users_list)
+
+@main.route('/api/user_info', methods=['GET'])
+@jwt_required()
+def user_info():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    return jsonify({"name": user.name})
+
 @main.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -182,6 +197,7 @@ def chat():
         print(actions)
         print(system_response)
         print(transfer_slot_values_map)
+        
 
 
         if transfer_slot_values_map['recipient_account_name'] == '' or transfer_slot_values_map['account_type'] == '' or transfer_slot_values_map['amount'] == '':
@@ -194,7 +210,10 @@ def chat():
                 }
             )
         
-        if transfer_slot_values_map['recipient_account_type'] == '':
+        if transfer_slot_values_map['account_type'] not in ['checking', 'savings']: #edge case banks account_type] account_type checking
+            transfer_slot_values_map['account_type'] = 'checking'
+
+        if transfer_slot_values_map['recipient_account_type'] == '' or transfer_slot_values_map['recipient_account_type'] not in ['checking', 'savings']:
             transfer_slot_values_map['recipient_account_type'] = transfer_slot_values_map['account_type']
 
         transfer_response = perform_transfer(user_id, 
